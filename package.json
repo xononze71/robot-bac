@@ -1,6 +1,6 @@
 {
   "name": "robot-bac-pro",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Robot de scraping haute performance pour les résultats du BAC",
   "main": "server.js",
   "scripts": {
