@@ -1,8 +1,14 @@
 {
+  "name": "robot-bac-final",
+  "version": "1.0.0",
+  "description": "Robot de scraping pour les résultats du BAC",
   "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
-    "cors": "*",
-    "express": "*",
-    "puppeteer": "*"
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "puppeteer": "^22.10.0"
   }
 }
