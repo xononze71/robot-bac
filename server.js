@@ -1,25 +1,76 @@
-// server.js - Le Robot
-// Ce fichier doit être déployé sur un service comme Vercel.
+// server.js - Le Robot Final (Version Intelligente et Professionnelle)
+// Ce robot est conçu pour être autonome et s'adapter aux pages.
 
 const express = require('express');
 const puppeteer = require('puppeteer');
-const cors = require('cors');
+const cors =require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuration
-app.use(cors()); // Permet à votre site de parler au robot
+app.use(cors());
 app.use(express.json());
 
-// Les 3 sites à vérifier
-const SITE_URLS = [
-    'https://agce.exam-deco.org/edit/resultats-examen-bac-2025/',
-    'https://www.men-deco.org/resultats-bac-2025/',
-    'https://itdeco.ci/examens/resultat/bac'
+// La liste des 4 sites à vérifier, avec leur type
+const SITES_A_VERIFIER = [
+    {
+        nom: "ITDECO",
+        url: "https://itdeco.ci/examens/resultat/bac/",
+        type: "direct" // Ce site est direct
+    },
+    {
+        nom: "AGCE-DECO",
+        url: "https://agce.exam-deco.org/edit/resultats-examen-bac-2025/",
+        type: "direct" // Ce site est direct
+    },
+    {
+        nom: "MEN-DECO (Portail)",
+        url: "https://www.men-deco.org/",
+        type: "indirect" // Ce site nécessite de trouver un lien
+    },
+    {
+        nom: "MEN-DECO (Lien direct)",
+        url: "https://www.men-deco.org/resultats-bac-2025/",
+        type: "direct" // Un autre lien direct, au cas où
+    }
 ];
 
-// La route que votre site va appeler
+// Le robot va essayer de deviner le bon champ pour le matricule
+async function findMatriculeInput(page) {
+    const selectors = [
+        'input[name*="matricule"]',
+        'input[id*="matricule"]',
+        'input[placeholder*="matricule"]',
+        'input[type="text"]',
+        'input[type="search"]'
+    ];
+    for (const selector of selectors) {
+        try {
+            const element = await page.waitForSelector(selector, { timeout: 1000 });
+            if (element) return selector;
+        } catch (e) { /* ignore */ }
+    }
+    return null;
+}
+
+// Le robot va essayer de deviner le bon bouton pour valider
+async function findSubmitButton(page) {
+    const selectors = [
+        'button[type="submit"]',
+        'input[type="submit"]',
+        'button:has-text("Vérifier")',
+        'button:has-text("Consulter")',
+        'button:has-text("Rechercher")'
+    ];
+     for (const selector of selectors) {
+        try {
+            const element = await page.waitForSelector(selector, { timeout: 1000 });
+            if (element) return selector;
+        } catch (e) { /* ignore */ }
+    }
+    return null;
+}
+
 app.get('/api/resultat', async (req, res) => {
     const { matricule } = req.query;
 
@@ -28,67 +79,61 @@ app.get('/api/resultat', async (req, res) => {
     }
 
     console.log(`Début de la recherche pour le matricule : ${matricule}`);
-
-    // On utilise un navigateur invisible pour le scraping
-    // Les options sont pour la compatibilité avec Vercel
     const browser = await puppeteer.launch({ 
         args: ['--no-sandbox', '--disable-setuid-sandbox'] 
     });
     const page = await browser.newPage();
-
     let finalResult = null;
 
-    // On essaie chaque site l'un après l'autre
-    for (const url of SITE_URLS) {
+    for (const site of SITES_A_VERIFIER) {
         try {
-            console.log(`Essai sur : ${url}`);
-            
-            // ================================================================
-            // ATTENTION : C'EST LA PARTIE LA PLUS IMPORTANTE À MODIFIER !
-            // Vous devrez remplacer les sélecteurs ci-dessous par les vrais
-            // sélecteurs des sites officiels une fois qu'ils seront actifs.
-            // Utilisez "Inspecter l'élément" dans votre navigateur pour les trouver.
-            // ================================================================
-            
-            const matriculeInputSelector = '#matricule-input-selector'; // <-- À CHANGER
-            const submitButtonSelector = '#submit-button-selector'; // <-- À CHANGER
-            const resultStatusSelector = '#result-status-selector'; // <-- À CHANGER
-            const resultPointsSelector = '#result-points-selector'; // <-- À CHANGER
+            console.log(`--- Essai sur le site : ${site.nom} ---`);
+            await page.goto(site.url, { waitUntil: 'networkidle2', timeout: 25000 });
 
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 15000 });
-
-            // Remplir le champ du matricule
-            await page.type(matriculeInputSelector, matricule);
-            
-            // Cliquer sur le bouton de recherche
-            await page.click(submitButtonSelector);
-
-            // Attendre que le résultat s'affiche
-            await page.waitForSelector(resultStatusSelector, { timeout: 10000 });
-
-            // Extraire le statut (ADMIS/REFUSÉ) et les points
-            const status = await page.$eval(resultStatusSelector, el => el.textContent.trim());
-            const points = await page.$eval(resultPointsSelector, el => el.textContent.trim());
-
-            // Si on a un résultat clair, on le garde
-            if (status && (status.toUpperCase().includes('ADMIS') || status.toUpperCase().includes('REFUSÉ'))) {
-                finalResult = {
-                    status: status.toUpperCase().includes('ADMIS') ? 'ADMIS' : 'REFUSÉ',
-                    points: points,
-                    source: url
-                };
-                console.log(`Résultat trouvé sur ${url}!`);
-                break; // On a trouvé, on arrête de chercher
+            if (site.type === 'indirect') {
+                console.log("Site indirect détecté. Recherche d'un lien pertinent...");
+                // Le robot cherche un lien <a> qui contient le mot "résultat" ou "bac"
+                const link = await page.waitForSelector('a[href*="resultat"], a:has-text("résultat"), a:has-text("BAC")', { timeout: 15000 });
+                await link.click();
+                console.log("Lien trouvé et cliqué. Attente de la nouvelle page...");
+                await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 });
             }
+
+            console.log("Recherche intelligente des champs sur la page...");
+            const matriculeSelector = await findMatriculeInput(page);
+            const boutonSelector = await findSubmitButton(page);
+
+            if (!matriculeSelector || !boutonSelector) {
+                throw new Error("Impossible de trouver le formulaire sur la page.");
+            }
+            
+            console.log(`Champ trouvé : ${matriculeSelector}. Bouton trouvé : ${boutonSelector}.`);
+            await page.type(matriculeSelector, matricule);
+            await page.click(boutonSelector);
+
+            console.log("Attente du résultat...");
+            // Le robot attend un élément qui contient "ADMIS" ou "REFUSÉ"
+            const resultatElement = await page.waitForSelector('*:has-text("ADMIS"), *:has-text("REFUSÉ")', { timeout: 20000 });
+            
+            console.log("Résultat détecté. Lecture des informations...");
+            const pageContent = await page.evaluate(() => document.body.innerText);
+            
+            const status = pageContent.includes('ADMIS') ? 'ADMIS' : 'REFUSÉ';
+            // Tente de trouver des points (chiffres avec une virgule ou un point)
+            const pointsMatch = pageContent.match(/(\d{1,2}[,.]\d{1,2})/);
+            const points = pointsMatch ? pointsMatch[0].replace(',', '.') : 'N/A';
+
+            finalResult = { status, points, source: site.nom };
+            console.log(`SUCCÈS ! Résultat trouvé sur ${site.nom}!`);
+            break;
+
         } catch (error) {
-            console.log(`Rien trouvé ou erreur sur ${url}: ${error.message}`);
-            // On continue au site suivant
+            console.log(`ÉCHEC ou erreur sur ${site.nom}: ${error.message}`);
         }
     }
 
-    await browser.close(); // On ferme le navigateur invisible
+    await browser.close();
 
-    // On envoie la réponse au site
     if (finalResult) {
         res.json(finalResult);
     } else {
